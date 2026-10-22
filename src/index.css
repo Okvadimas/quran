@@ -24,6 +24,36 @@
   font-family: 'Amiri Quran', serif;
 }
 
+.font-inter {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.font-lora {
+  font-family: 'Lora', Georgia, serif;
+}
+
+.font-merriweather {
+  font-family: 'Merriweather', Georgia, serif;
+}
+
+.font-outfit {
+  font-family: 'Outfit', system-ui, sans-serif;
+}
+
+.font-jakarta {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+.font-bebas {
+  font-family: 'Bebas Neue', Impact, sans-serif;
+  letter-spacing: 0.05em;
+}
+
+.font-oswald {
+  font-family: 'Oswald', sans-serif;
+  letter-spacing: 0.03em;
+}
+
 /* Custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

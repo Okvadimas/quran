@@ -8,41 +8,50 @@ import VerseChunker from './components/VerseChunker';
 import { SURAHS } from './data/surahs';
 
 export default function App() {
-  // Surah & Verse state (Defaults to Surah 25: Al-Furqan)
-  const [selectedSurah, setSelectedSurah] = useState(25);
-  const [selectedAyah, setSelectedAyah] = useState(20);
+  // Surah & Verse state (Defaults to Surah 23: Al-Mu'minun, Verse 1)
+  const [selectedSurah, setSelectedSurah] = useState(23);
+  const [selectedAyah, setSelectedAyah] = useState(1);
 
   // Mode: 'single' | 'range'
   const [mode, setMode] = useState('single');
-  const [startAyah, setStartAyah] = useState(20);
-  const [endAyah, setEndAyah] = useState(30);
+  const [startAyah, setStartAyah] = useState(1);
+  const [endAyah, setEndAyah] = useState(1);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
   // Chunking / Potongan Nafas State (Imam Recitation Splitter)
   const [isChunkMode, setIsChunkMode] = useState(false);
   const [chunks, setChunks] = useState([]);
   const [activeChunkIndex, setActiveChunkIndex] = useState(0);
+  const [previewTarget, setPreviewTarget] = useState('full'); // 'full' | 'chunk'
 
   // Styling state
   const [fontFamily, setFontFamily] = useState('font-scheherazade');
-  const [arabicFontSize, setArabicFontSize] = useState(36);
+  const [arabicFontSize, setArabicFontSize] = useState(32);
   const [arabicLineHeight, setArabicLineHeight] = useState(2.2);
   const [textAlign, setTextAlign] = useState('center');
 
-  // Colors: Default Light Mode (White background, Dark slate text)
+  // Colors: Default Pure Black Mode (#000000 background, White text)
   const [isTransparent, setIsTransparent] = useState(false);
-  const [bgColor, setBgColor] = useState('#ffffff');
-  const [textColor, setTextColor] = useState('#0f172a');
+  const [bgColor, setBgColor] = useState('#000000');
+  const [textColor, setTextColor] = useState('#fdf6e6');
 
-  // Translation (Default unchecked)
-  const [showTranslation, setShowTranslation] = useState(false);
+  // Translation (Default: Outfit geometric font, natural casing, Bronze Gold #d4b187 from cover subtitle)
+  const [showTranslation, setShowTranslation] = useState(true);
+  const [showTransliteration, setShowTransliteration] = useState(true); // Latin Transliteration (Default ON)
   const [translationLang, setTranslationLang] = useState('id'); // 'id' | 'en'
-  const [translationFontSize, setTranslationFontSize] = useState(15);
+  const [translationFontSize, setTranslationFontSize] = useState(19);
+  const [translationFontFamily, setTranslationFontFamily] = useState('font-outfit');
+  const [translationAllCaps, setTranslationAllCaps] = useState(false);
+  const [showTranslationAyahNumber, setShowTranslationAyahNumber] = useState(true);
+  const [translationTextColor, setTranslationTextColor] = useState('#d4b187'); // Bronze Gold (Cover)
+  const [customVerseTranslations, setCustomVerseTranslations] = useState({});
+  const [customVerseLatins, setCustomVerseLatins] = useState({});
 
-  // Layout: Default Auto Fit (Fit Content), ornaments unchecked
-  const [aspectRatio, setAspectRatio] = useState('auto');
+  // Layout: Default 16:9 Landscape, ornaments
+  const [aspectRatio, setAspectRatio] = useState('16:9');
   const [showReference, setShowReference] = useState(false);
   const [showBismillah, setShowBismillah] = useState(false);
+  const [showAyahNumber, setShowAyahNumber] = useState(true);
 
   // Surah data & verses
   const [surahVerses, setSurahVerses] = useState([]);
@@ -70,7 +79,7 @@ export default function App() {
     const fetchSurah = async () => {
       try {
         const res = await fetch(
-          `https://api.alquran.cloud/v1/surah/${selectedSurah}/editions/quran-simple,id.indonesian,en.asad`
+          `https://api.alquran.cloud/v1/surah/${selectedSurah}/editions/quran-simple,id.indonesian,en.asad,en.transliteration`
         );
 
         if (!res.ok) {
@@ -82,12 +91,14 @@ export default function App() {
           const arabicAyahs = json.data[0].ayahs || [];
           const indoAyahs = json.data[1].ayahs || [];
           const englishAyahs = json.data[2].ayahs || [];
+          const latinAyahs = json.data[3]?.ayahs || [];
 
           const combined = arabicAyahs.map((item, idx) => ({
             numberInSurah: item.numberInSurah,
             arabicText: item.text,
             indonesianText: indoAyahs[idx]?.text || '',
             englishText: englishAyahs[idx]?.text || '',
+            latinText: latinAyahs[idx]?.text || '',
           }));
 
           if (isMounted) {
@@ -133,14 +144,19 @@ export default function App() {
   useEffect(() => {
     setChunks([]);
     setActiveChunkIndex(0);
+    setPreviewTarget('full');
   }, [selectedSurah, selectedAyah]);
 
   const rangeAyahsList = React.useMemo(() => {
     if (mode !== 'range' || surahVerses.length === 0) return [];
-    return surahVerses.filter(
-      (v) => v.numberInSurah >= startAyah && v.numberInSurah <= endAyah
-    );
-  }, [mode, surahVerses, startAyah, endAyah]);
+    return surahVerses
+      .filter((v) => v.numberInSurah >= startAyah && v.numberInSurah <= endAyah)
+      .map((v) => ({
+        ...v,
+        customTranslation: customVerseTranslations[`${selectedSurah}:${v.numberInSurah}`] || '',
+        customLatin: customVerseLatins[`${selectedSurah}:${v.numberInSurah}`] || '',
+      }));
+  }, [mode, surahVerses, startAyah, endAyah, selectedSurah, customVerseTranslations, customVerseLatins]);
 
   const totalRangeSlides = Math.max(1, endAyah - startAyah + 1);
 
@@ -152,6 +168,7 @@ export default function App() {
           arabicText: 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
           indonesianText: 'Dengan nama Allah Yang Maha Pengasih, Maha Penyayang.',
           englishText: 'In the name of God, the Most Gracious, the Most Merciful.',
+          latinText: "Bismillaahir-rohmaanir-rohiim",
           numberInSurah: selectedAyah,
         };
     } else {
@@ -161,31 +178,60 @@ export default function App() {
           arabicText: '...',
           indonesianText: '...',
           englishText: '...',
+          latinText: '...',
           numberInSurah: startAyah + currentSlideIndex,
         };
     }
 
-    // When single mode + chunk mode is enabled with chunks defined
-    if (mode === 'single' && isChunkMode && chunks.length > 0) {
-      const activeChunk = chunks[activeChunkIndex] || chunks[0];
-      if (activeChunk) {
-        return {
-          ...baseData,
-          arabicText: activeChunk.arabicText,
-          customTranslation: activeChunk.customTranslation,
-          chunkInfo: {
-            current: activeChunkIndex + 1,
-            total: chunks.length,
-          },
-        };
-      }
-    }
+    const ayahNum = baseData.numberInSurah || (mode === 'single' ? selectedAyah : startAyah + currentSlideIndex);
+    const key = `${selectedSurah}:${ayahNum}`;
+    const customText = customVerseTranslations[key] || '';
+    const customLatinText = customVerseLatins[key] || '';
 
-    return baseData;
-  }, [mode, surahVerses, selectedAyah, rangeAyahsList, currentSlideIndex, startAyah, isChunkMode, chunks, activeChunkIndex]);
+    return {
+      ...baseData,
+      customTranslation: customText,
+      customLatin: customLatinText,
+    };
+  }, [mode, surahVerses, selectedAyah, rangeAyahsList, currentSlideIndex, startAyah, selectedSurah, customVerseTranslations, customVerseLatins]);
 
   const activeAyahNumber =
     mode === 'single' ? selectedAyah : currentVerseData?.numberInSurah || startAyah + currentSlideIndex;
+
+  const activeAyahKey = `${selectedSurah}:${activeAyahNumber}`;
+  const customVerseTranslation = customVerseTranslations[activeAyahKey] || '';
+  const customVerseLatin = customVerseLatins[activeAyahKey] || '';
+
+  const handleUpdateCustomVerseTranslation = (text) => {
+    setCustomVerseTranslations((prev) => {
+      const next = { ...prev };
+      if (text && text.trim() !== '') {
+        next[activeAyahKey] = text;
+      } else {
+        delete next[activeAyahKey];
+      }
+      return next;
+    });
+  };
+
+  const handleUpdateCustomVerseLatin = (text) => {
+    setCustomVerseLatins((prev) => {
+      const next = { ...prev };
+      if (text && text.trim() !== '') {
+        next[activeAyahKey] = text;
+      } else {
+        delete next[activeAyahKey];
+      }
+      return next;
+    });
+  };
+
+  const defaultVerseTranslation =
+    translationLang === 'id'
+      ? currentVerseData?.indonesianText || ''
+      : currentVerseData?.englishText || '';
+
+  const defaultVerseLatin = currentVerseData?.latinText || '';
 
   const handleRandomVerse = () => {
     const randomSurahObj = SURAHS[Math.floor(Math.random() * SURAHS.length)];
@@ -239,14 +285,33 @@ export default function App() {
               setTranslationLang={setTranslationLang}
               translationFontSize={translationFontSize}
               setTranslationFontSize={setTranslationFontSize}
+              translationFontFamily={translationFontFamily}
+              setTranslationFontFamily={setTranslationFontFamily}
+              translationAllCaps={translationAllCaps}
+              setTranslationAllCaps={setTranslationAllCaps}
+              showTranslationAyahNumber={showTranslationAyahNumber}
+              setShowTranslationAyahNumber={setShowTranslationAyahNumber}
+              selectedAyah={activeAyahNumber}
               aspectRatio={aspectRatio}
               setAspectRatio={setAspectRatio}
               showReference={showReference}
               setShowReference={setShowReference}
               showBismillah={showBismillah}
               setShowBismillah={setShowBismillah}
+              showAyahNumber={showAyahNumber}
+              setShowAyahNumber={setShowAyahNumber}
               textAlign={textAlign}
               setTextAlign={setTextAlign}
+              customVerseTranslation={customVerseTranslation}
+              onUpdateCustomVerseTranslation={handleUpdateCustomVerseTranslation}
+              defaultVerseTranslation={defaultVerseTranslation}
+              customVerseLatin={customVerseLatin}
+              onUpdateCustomVerseLatin={handleUpdateCustomVerseLatin}
+              defaultVerseLatin={defaultVerseLatin}
+              translationTextColor={translationTextColor}
+              setTranslationTextColor={setTranslationTextColor}
+              showTransliteration={showTransliteration}
+              setShowTransliteration={setShowTransliteration}
             />
 
             {/* 3. Export Toolbar */}
@@ -295,11 +360,16 @@ export default function App() {
               bgColor={bgColor}
               textColor={textColor}
               showTranslation={showTranslation}
+              showTransliteration={showTransliteration}
               translationLang={translationLang}
               translationFontSize={translationFontSize}
+              translationFontFamily={translationFontFamily}
+              translationAllCaps={translationAllCaps}
+              showTranslationAyahNumber={showTranslationAyahNumber}
               aspectRatio={aspectRatio}
               showReference={showReference}
               showBismillah={showBismillah}
+              showAyahNumber={showAyahNumber}
               textAlign={textAlign}
               surahInfo={currentSurahData}
               selectedAyah={activeAyahNumber}
@@ -309,6 +379,18 @@ export default function App() {
               totalSlides={totalRangeSlides}
               startAyah={startAyah}
               endAyah={endAyah}
+              chunks={chunks}
+              activeChunkIndex={activeChunkIndex}
+              setActiveChunkIndex={setActiveChunkIndex}
+              previewTarget={previewTarget}
+              setPreviewTarget={setPreviewTarget}
+              customVerseTranslation={customVerseTranslation}
+              onUpdateCustomVerseTranslation={handleUpdateCustomVerseTranslation}
+              defaultVerseTranslation={defaultVerseTranslation}
+              customVerseLatin={customVerseLatin}
+              onUpdateCustomVerseLatin={handleUpdateCustomVerseLatin}
+              defaultVerseLatin={defaultVerseLatin}
+              translationTextColor={translationTextColor}
             />
 
             {/* Recitation Splitter (Potongan Nafas Imam) - Placed directly below Live Preview */}
@@ -320,13 +402,31 @@ export default function App() {
                 surahInfo={currentSurahData}
                 isTransparent={isTransparent}
                 bgColor={bgColor}
+                textColor={textColor}
                 isChunkMode={isChunkMode}
                 setIsChunkMode={setIsChunkMode}
                 chunks={chunks}
                 setChunks={setChunks}
                 activeChunkIndex={activeChunkIndex}
                 setActiveChunkIndex={setActiveChunkIndex}
+                previewTarget={previewTarget}
+                setPreviewTarget={setPreviewTarget}
                 fontFamily={fontFamily}
+                arabicFontSize={arabicFontSize}
+                arabicLineHeight={arabicLineHeight}
+                aspectRatio={aspectRatio}
+                showTranslation={showTranslation}
+                showTransliteration={showTransliteration}
+                translationLang={translationLang}
+                translationFontSize={translationFontSize}
+                translationFontFamily={translationFontFamily}
+                translationAllCaps={translationAllCaps}
+                showTranslationAyahNumber={showTranslationAyahNumber}
+                translationTextColor={translationTextColor}
+                showReference={showReference}
+                showBismillah={showBismillah}
+                showAyahNumber={showAyahNumber}
+                textAlign={textAlign}
               />
             )}
           </div>

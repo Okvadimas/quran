@@ -3,6 +3,7 @@ import { Download, Copy, Check, Loader2, AlertCircle } from 'lucide-react';
 import { toPng, toJpeg, toBlob } from 'html-to-image';
 import confetti from 'canvas-confetti';
 import JSZip from 'jszip';
+import { triggerFileDownload } from '../utils/downloadHelper';
 
 export default function ExportToolbar({
   previewRef,
@@ -56,11 +57,14 @@ export default function ExportToolbar({
     setProgressText('Generating image...');
 
     try {
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+
       const node = previewRef.current;
       const options = {
         pixelRatio: scale,
         cacheBust: true,
-        skipFonts: true,
         backgroundColor:
           format === 'jpeg'
             ? isTransparent
@@ -78,11 +82,9 @@ export default function ExportToolbar({
         dataUrl = await toJpeg(node, { ...options, quality: 0.95 });
       }
 
-      const link = document.createElement('a');
       const chunkSuffix = isChunkMode ? `_Part_${activeChunkIndex + 1}` : '';
-      link.download = `Quran_${getSurahClean()}_Verse_${selectedAyah}${chunkSuffix}.${format === 'jpeg' ? 'jpg' : 'png'}`;
-      link.href = dataUrl;
-      link.click();
+      const filename = `Quran_${getSurahClean()}_Verse_${selectedAyah}${chunkSuffix}.${format === 'jpeg' ? 'jpg' : 'png'}`;
+      triggerFileDownload(dataUrl, filename);
 
       triggerConfetti();
     } catch (err) {
@@ -103,11 +105,14 @@ export default function ExportToolbar({
     setErrorMessage('');
 
     try {
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+
       const node = previewRef.current;
       const blob = await toBlob(node, {
         pixelRatio: 2,
         cacheBust: true,
-        skipFonts: true,
         backgroundColor: isTransparent ? null : bgColor,
       });
 
@@ -143,11 +148,14 @@ export default function ExportToolbar({
     const surahClean = getSurahClean();
 
     try {
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+
       const node = previewRef.current;
       const options = {
         pixelRatio: scale,
         cacheBust: true,
-        skipFonts: true,
         backgroundColor: isTransparent ? null : bgColor,
       };
 
@@ -171,13 +179,8 @@ export default function ExportToolbar({
       setProgressPercent(95);
 
       const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const downloadUrl = URL.createObjectURL(zipBlob);
-
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = `Quran_${surahClean}_Verses_${startAyah}-${endAyah}.zip`;
-      link.click();
-      URL.revokeObjectURL(downloadUrl);
+      const filename = `Quran_${surahClean}_Verses_${startAyah}-${endAyah}.zip`;
+      triggerFileDownload(zipBlob, filename);
 
       setProgressPercent(100);
       triggerConfetti();
