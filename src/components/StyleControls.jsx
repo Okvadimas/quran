@@ -219,7 +219,7 @@ export default function StyleControls({
                   type="range"
                   min="20"
                   max="64"
-                  step="2"
+                  step="1"
                   value={arabicFontSize}
                   onChange={(e) => setArabicFontSize(Number(e.target.value))}
                   className="w-full accent-emerald-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
