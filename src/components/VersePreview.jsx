@@ -15,6 +15,7 @@ const VersePreview = forwardRef(function VersePreview(
     textColor,
     showTranslation,
     showTransliteration = true,
+    latinFontSize = 14,
     translationLang,
     translationFontSize,
     translationFontFamily = 'font-lora',
@@ -141,6 +142,17 @@ const VersePreview = forwardRef(function VersePreview(
   };
 
   const [previewCardWidth, setPreviewCardWidth] = useState(690);
+  const [cardHeight, setCardHeight] = useState(0);
+  const [zoomMode, setZoomMode] = useState('fit'); // 'fit' | '100%'
+  const [windowHeight, setWindowHeight] = useState(
+    typeof window !== 'undefined' ? window.innerHeight : 900
+  );
+
+  useEffect(() => {
+    const handleResize = () => setWindowHeight(window.innerHeight);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (isFullscreen) return;
@@ -152,6 +164,9 @@ const VersePreview = forwardRef(function VersePreview(
       if (rect.width > 0) {
         setPreviewCardWidth(rect.width);
       }
+      if (el.offsetHeight > 0) {
+        setCardHeight(el.offsetHeight);
+      }
     };
 
     measure();
@@ -162,6 +177,9 @@ const VersePreview = forwardRef(function VersePreview(
           setPreviewCardWidth(w);
         }
       }
+      if (el.offsetHeight > 0) {
+        setCardHeight(el.offsetHeight);
+      }
     });
 
     ro.observe(el);
@@ -170,7 +188,26 @@ const VersePreview = forwardRef(function VersePreview(
       ro.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [isFullscreen, aspectRatio]);
+  }, [isFullscreen, aspectRatio, arabicFontSize, translationFontSize, latinFontSize]);
+
+  // Calculate proportional zoom for fit view
+  const effectiveZoom = (() => {
+    if (isFullscreen || zoomMode === '100%') return 1;
+    // Fit within viewport (leaving room for nav, header, margins)
+    const availableHeight = Math.max(420, windowHeight - 250);
+    const targetHeight =
+      cardHeight > 0
+        ? cardHeight
+        : aspectRatio === '9:16'
+        ? (previewCardWidth > 0 ? previewCardWidth * (16 / 9) : 1100)
+        : aspectRatio === '4:5'
+        ? (previewCardWidth > 0 ? previewCardWidth * (5 / 4) : 800)
+        : 600;
+
+    if (targetHeight <= availableHeight) return 1;
+    const calculated = availableHeight / targetHeight;
+    return Math.max(0.38, Math.min(1, Math.round(calculated * 100) / 100));
+  })();
 
   // Exact scale multiplier based on card width (preserves 100% identical line breaks & visual percentages)
   const scaleFactor = isFullscreen && previewCardWidth > 0
@@ -185,6 +222,10 @@ const VersePreview = forwardRef(function VersePreview(
   const effectiveTranslationFontSize = isFullscreen
     ? Math.round(translationFontSize * scaleFactor)
     : translationFontSize;
+
+  const effectiveLatinFontSize = isFullscreen
+    ? Math.round(latinFontSize * scaleFactor)
+    : latinFontSize;
 
   // Tokenize full verse to check if active chunk is the last chunk
   const words = React.useMemo(() => {
@@ -367,15 +408,47 @@ const VersePreview = forwardRef(function VersePreview(
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={toggleFullscreen}
-          title="Tampilkan Live Preview Layar Penuh (Fullscreen)"
-          className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all cursor-pointer shrink-0"
-        >
-          <Maximize2 className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Full Screen</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Zoom View Segmented Control (Active on tall aspect ratios or when card overflows viewport) */}
+          {!isFullscreen && (aspectRatio === '9:16' || aspectRatio === '4:5' || (cardHeight > 0 && cardHeight > windowHeight - 250)) && (
+            <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 shadow-2xs text-xs">
+              <button
+                type="button"
+                onClick={() => setZoomMode('fit')}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  zoomMode === 'fit'
+                    ? 'bg-white text-emerald-800 shadow-2xs font-bold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Sesuaikan tampilan visual agar pas di 1 layar tanpa scroll (ekspor tetap 100% ukuran penuh)"
+              >
+                Fit {effectiveZoom < 1 && zoomMode === 'fit' ? `(${Math.round(effectiveZoom * 100)}%)` : 'View'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setZoomMode('100%')}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  zoomMode === '100%'
+                    ? 'bg-white text-emerald-800 shadow-2xs font-bold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Tampilkan ukuran penuh 100%"
+              >
+                100%
+              </button>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            title="Tampilkan Live Preview Layar Penuh (Fullscreen)"
+            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all cursor-pointer shrink-0"
+          >
+            <Maximize2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Full Screen</span>
+          </button>
+        </div>
       </div>
 
       {/* Quick Text Editor Collapsible Panel */}
@@ -639,10 +712,36 @@ const VersePreview = forwardRef(function VersePreview(
               : 'bg-white border border-slate-200 shadow-md shadow-slate-200/40'
           }`}
         >
-          {/* Actual Export Target Node */}
+          {/* Zoom Viewport for Fit View */}
           <div
-            ref={ref}
-            id="quran-export-card"
+            style={
+              !isFullscreen && effectiveZoom < 1
+                ? {
+                    height: `${Math.round((cardHeight || (previewCardWidth * (16 / 9))) * effectiveZoom)}px`,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'flex-start',
+                    width: '100%',
+                  }
+                : { width: '100%' }
+            }
+          >
+            <div
+              style={
+                !isFullscreen && effectiveZoom < 1
+                  ? {
+                      transform: `scale(${effectiveZoom})`,
+                      transformOrigin: 'top center',
+                      width: '100%',
+                    }
+                  : { width: '100%' }
+              }
+            >
+              {/* Actual Export Target Node */}
+              <div
+                ref={ref}
+                id="quran-export-card"
             style={{
               ...getAspectRatioStyle(),
               backgroundColor: isTransparent && !isFullscreen ? 'transparent' : bgColor,
@@ -811,7 +910,7 @@ const VersePreview = forwardRef(function VersePreview(
                   <p
                     style={{
                       fontFamily: "'Outfit', sans-serif",
-                      fontSize: `${Math.max(11, Math.round(14 * scaleFactor))}px`,
+                      fontSize: `${effectiveLatinFontSize}px`,
                       color: translationTextColor || '#d4b187',
                       opacity: 0.85,
                       letterSpacing: '0.02em',
@@ -925,6 +1024,8 @@ const VersePreview = forwardRef(function VersePreview(
             </div>
           )}
         </div>
+            </div>
+          </div>
       </div>
     </div>
   </div>

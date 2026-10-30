@@ -65,6 +65,10 @@ export default function ExportToolbar({
       const options = {
         pixelRatio: scale,
         cacheBust: true,
+        style: {
+          transform: 'none',
+          zoom: '1',
+        },
         backgroundColor:
           format === 'jpeg'
             ? isTransparent
@@ -113,6 +117,10 @@ export default function ExportToolbar({
       const blob = await toBlob(node, {
         pixelRatio: 2,
         cacheBust: true,
+        style: {
+          transform: 'none',
+          zoom: '1',
+        },
         backgroundColor: isTransparent ? null : bgColor,
       });
 
@@ -156,6 +164,10 @@ export default function ExportToolbar({
       const options = {
         pixelRatio: scale,
         cacheBust: true,
+        style: {
+          transform: 'none',
+          zoom: '1',
+        },
         backgroundColor: isTransparent ? null : bgColor,
       };
 

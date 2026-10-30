@@ -38,6 +38,7 @@ export default function App() {
   // Translation (Default: Outfit geometric font, natural casing, Bronze Gold #d4b187 from cover subtitle)
   const [showTranslation, setShowTranslation] = useState(true);
   const [showTransliteration, setShowTransliteration] = useState(true); // Latin Transliteration (Default ON)
+  const [latinFontSize, setLatinFontSize] = useState(14);
   const [translationLang, setTranslationLang] = useState('id'); // 'id' | 'en'
   const [translationFontSize, setTranslationFontSize] = useState(19);
   const [translationFontFamily, setTranslationFontFamily] = useState('font-outfit');
@@ -312,6 +313,8 @@ export default function App() {
               setTranslationTextColor={setTranslationTextColor}
               showTransliteration={showTransliteration}
               setShowTransliteration={setShowTransliteration}
+              latinFontSize={latinFontSize}
+              setLatinFontSize={setLatinFontSize}
             />
 
             {/* 3. Export Toolbar */}
@@ -361,6 +364,7 @@ export default function App() {
               textColor={textColor}
               showTranslation={showTranslation}
               showTransliteration={showTransliteration}
+              latinFontSize={latinFontSize}
               translationLang={translationLang}
               translationFontSize={translationFontSize}
               translationFontFamily={translationFontFamily}
@@ -417,6 +421,7 @@ export default function App() {
                 aspectRatio={aspectRatio}
                 showTranslation={showTranslation}
                 showTransliteration={showTransliteration}
+                latinFontSize={latinFontSize}
                 translationLang={translationLang}
                 translationFontSize={translationFontSize}
                 translationFontFamily={translationFontFamily}

@@ -66,6 +66,7 @@ export default function VerseChunker({
   aspectRatio = '16:9',
   showTranslation = true,
   showTransliteration = true,
+  latinFontSize = 14,
   translationLang = 'id',
   translationFontSize = 19,
   translationFontFamily = 'font-outfit',
@@ -1278,7 +1279,7 @@ export default function VerseChunker({
                     <p
                       style={{
                         fontFamily: "'Outfit', sans-serif",
-                        fontSize: `${Math.max(12, Math.round(translationFontSize * 0.78))}px`,
+                        fontSize: `${latinFontSize}px`,
                         color: translationTextColor || textColor,
                         opacity: 0.85,
                         letterSpacing: '0.02em',

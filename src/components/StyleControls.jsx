@@ -113,6 +113,8 @@ export default function StyleControls({
   setTranslationTextColor,
   showTransliteration = true,
   setShowTransliteration,
+  latinFontSize = 14,
+  setLatinFontSize,
 }) {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
@@ -358,56 +360,74 @@ export default function StyleControls({
               </div>
 
               {showTransliteration && (
-                <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-slate-700">Kustom Latin Ayat {selectedAyah}</span>
-                      {customVerseLatin && customVerseLatin.trim() !== '' && (
-                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          Kustom Aktif
-                        </span>
-                      )}
+                <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-3">
+                  <div>
+                    <div className="flex justify-between text-[11px] text-slate-500 mb-1">
+                      <span>Ukuran Font Latin</span>
+                      <span className="font-mono text-emerald-700 font-bold">{latinFontSize}px</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {(!customVerseLatin || customVerseLatin.trim() === '') && defaultVerseLatin && (
-                        <button
-                          type="button"
-                          onClick={() => onUpdateCustomVerseLatin && onUpdateCustomVerseLatin(defaultVerseLatin)}
-                          className="text-[11px] text-emerald-700 hover:text-emerald-800 hover:underline font-medium cursor-pointer flex items-center gap-1"
-                          title="Salin teks latin bawaan untuk diedit"
-                        >
-                          <Copy className="w-3 h-3" />
-                          Salin Default
-                        </button>
-                      )}
-                      {customVerseLatin && customVerseLatin.trim() !== '' && (
-                        <button
-                          type="button"
-                          onClick={() => onUpdateCustomVerseLatin && onUpdateCustomVerseLatin('')}
-                          className="text-[11px] text-rose-600 hover:underline font-medium cursor-pointer flex items-center gap-1"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          Reset ke Default
-                        </button>
-                      )}
-                    </div>
+                    <input
+                      type="range"
+                      min="8"
+                      max="32"
+                      step="1"
+                      value={latinFontSize}
+                      onChange={(e) => setLatinFontSize && setLatinFontSize(Number(e.target.value))}
+                      className="w-full accent-emerald-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
+                    />
                   </div>
-                  <input
-                    type="text"
-                    value={customVerseLatin || ''}
-                    onChange={(e) => onUpdateCustomVerseLatin && onUpdateCustomVerseLatin(e.target.value)}
-                    placeholder={defaultVerseLatin || 'Ketik ejaan latin kustom untuk ayat ini... (Kosongkan untuk pakai bawaan API)'}
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-sans transition-all"
-                  />
-                  <div className="flex items-center justify-between text-[10px] text-slate-400">
-                    <span>
-                      {customVerseLatin && customVerseLatin.trim() !== ''
-                        ? 'Menggunakan ejaan latin kustom'
-                        : 'Menggunakan ejaan bawaan (AlQuran.cloud)'}
-                    </span>
-                    {customVerseLatin && customVerseLatin.trim() !== '' && (
-                      <span>{customVerseLatin.trim().length} karakter</span>
-                    )}
+
+                  <div className="space-y-2 pt-2 border-t border-slate-200/60">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-700">Kustom Latin Ayat {selectedAyah}</span>
+                        {customVerseLatin && customVerseLatin.trim() !== '' && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            Kustom Aktif
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {(!customVerseLatin || customVerseLatin.trim() === '') && defaultVerseLatin && (
+                          <button
+                            type="button"
+                            onClick={() => onUpdateCustomVerseLatin && onUpdateCustomVerseLatin(defaultVerseLatin)}
+                            className="text-[11px] text-emerald-700 hover:text-emerald-800 hover:underline font-medium cursor-pointer flex items-center gap-1"
+                            title="Salin teks latin bawaan untuk diedit"
+                          >
+                            <Copy className="w-3 h-3" />
+                            Salin Default
+                          </button>
+                        )}
+                        {customVerseLatin && customVerseLatin.trim() !== '' && (
+                          <button
+                            type="button"
+                            onClick={() => onUpdateCustomVerseLatin && onUpdateCustomVerseLatin('')}
+                            className="text-[11px] text-rose-600 hover:underline font-medium cursor-pointer flex items-center gap-1"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            Reset ke Default
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      value={customVerseLatin || ''}
+                      onChange={(e) => onUpdateCustomVerseLatin && onUpdateCustomVerseLatin(e.target.value)}
+                      placeholder={defaultVerseLatin || 'Ketik ejaan latin kustom untuk ayat ini... (Kosongkan untuk pakai bawaan API)'}
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-sans transition-all"
+                    />
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>
+                        {customVerseLatin && customVerseLatin.trim() !== ''
+                          ? 'Menggunakan ejaan latin kustom'
+                          : 'Menggunakan ejaan bawaan (AlQuran.cloud)'}
+                      </span>
+                      {customVerseLatin && customVerseLatin.trim() !== '' && (
+                        <span>{customVerseLatin.trim().length} karakter</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -465,8 +485,9 @@ export default function StyleControls({
                     </div>
                     <input
                       type="range"
-                      min="12"
-                      max="24"
+                      min="10"
+                      max="48"
+                      step="1"
                       value={translationFontSize}
                       onChange={(e) => setTranslationFontSize(Number(e.target.value))}
                       className="w-full accent-emerald-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
