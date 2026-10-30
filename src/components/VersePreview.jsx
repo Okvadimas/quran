@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, forwardRef } from 'react';
-import { Loader2, ChevronLeft, ChevronRight, Maximize2, Minimize2, FileText, Copy, RotateCcw } from 'lucide-react';
+import { Loader2, ChevronLeft, ChevronRight, Maximize2, Minimize2, FileText, Copy, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import AyahMarker from './AyahMarker';
 
 const VersePreview = forwardRef(function VersePreview(
@@ -143,7 +143,7 @@ const VersePreview = forwardRef(function VersePreview(
 
   const [previewCardWidth, setPreviewCardWidth] = useState(690);
   const [cardHeight, setCardHeight] = useState(0);
-  const [zoomMode, setZoomMode] = useState('fit'); // 'fit' | '100%'
+  const [zoomPercent, setZoomPercent] = useState(null); // null = 'fit' (auto scale)
   const [windowHeight, setWindowHeight] = useState(
     typeof window !== 'undefined' ? window.innerHeight : 900
   );
@@ -190,11 +190,9 @@ const VersePreview = forwardRef(function VersePreview(
     };
   }, [isFullscreen, aspectRatio, arabicFontSize, translationFontSize, latinFontSize]);
 
-  // Calculate proportional zoom for fit view
-  const effectiveZoom = (() => {
-    if (isFullscreen || zoomMode === '100%') return 1;
-    // Fit within viewport (leaving room for nav, header, margins)
-    const availableHeight = Math.max(420, windowHeight - 250);
+  // Proportional zoom calculation for fit-view
+  const fitScale = (() => {
+    const availableHeight = Math.max(400, windowHeight - 250);
     const targetHeight =
       cardHeight > 0
         ? cardHeight
@@ -206,8 +204,32 @@ const VersePreview = forwardRef(function VersePreview(
 
     if (targetHeight <= availableHeight) return 1;
     const calculated = availableHeight / targetHeight;
-    return Math.max(0.38, Math.min(1, Math.round(calculated * 100) / 100));
+    return Math.max(0.3, Math.min(1, Math.round(calculated * 100) / 100));
   })();
+
+  const currentScale = isFullscreen
+    ? 1
+    : zoomPercent === null
+    ? fitScale
+    : Math.max(0.25, Math.min(1.5, zoomPercent / 100));
+
+  const currentZoomPercent = isFullscreen
+    ? 100
+    : zoomPercent === null
+    ? Math.round(fitScale * 100)
+    : zoomPercent;
+
+  const handleZoomIn = () => {
+    const current = currentZoomPercent;
+    const next = Math.min(150, Math.floor(current / 10) * 10 + 10);
+    setZoomPercent(next === current ? Math.min(150, next + 10) : next);
+  };
+
+  const handleZoomOut = () => {
+    const current = currentZoomPercent;
+    const prev = Math.max(25, Math.ceil(current / 10) * 10 - 10);
+    setZoomPercent(prev === current ? Math.max(25, prev - 10) : prev);
+  };
 
   // Exact scale multiplier based on card width (preserves 100% identical line breaks & visual percentages)
   const scaleFactor = isFullscreen && previewCardWidth > 0
@@ -409,26 +431,53 @@ const VersePreview = forwardRef(function VersePreview(
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Zoom View Segmented Control (Active on tall aspect ratios or when card overflows viewport) */}
-          {!isFullscreen && (aspectRatio === '9:16' || aspectRatio === '4:5' || (cardHeight > 0 && cardHeight > windowHeight - 250)) && (
+          {/* Zoom View Toolbar: Zoom Out [-], Display %, Zoom In [+], Fit, 100% */}
+          {!isFullscreen && (
             <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 shadow-2xs text-xs">
               <button
                 type="button"
-                onClick={() => setZoomMode('fit')}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                  zoomMode === 'fit'
+                onClick={handleZoomOut}
+                disabled={currentZoomPercent <= 30}
+                className="p-1 hover:bg-white rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-all"
+                title="Perkecil Zoom (-10%)"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+
+              <span className="px-1.5 font-mono text-[11px] font-bold text-slate-700 min-w-[36px] text-center select-none">
+                {currentZoomPercent}%
+              </span>
+
+              <button
+                type="button"
+                onClick={handleZoomIn}
+                disabled={currentZoomPercent >= 150}
+                className="p-1 hover:bg-white rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-all"
+                title="Perbesar Zoom (+10%)"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+
+              <div className="h-3.5 w-px bg-slate-200 mx-0.5"></div>
+
+              <button
+                type="button"
+                onClick={() => setZoomPercent(null)}
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all cursor-pointer ${
+                  zoomPercent === null
                     ? 'bg-white text-emerald-800 shadow-2xs font-bold'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
-                title="Sesuaikan tampilan visual agar pas di 1 layar tanpa scroll (ekspor tetap 100% ukuran penuh)"
+                title="Sesuaikan tampilan agar pas di 1 layar (Fit)"
               >
-                Fit {effectiveZoom < 1 && zoomMode === 'fit' ? `(${Math.round(effectiveZoom * 100)}%)` : 'View'}
+                Fit
               </button>
+
               <button
                 type="button"
-                onClick={() => setZoomMode('100%')}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                  zoomMode === '100%'
+                onClick={() => setZoomPercent(100)}
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all cursor-pointer ${
+                  zoomPercent === 100
                     ? 'bg-white text-emerald-800 shadow-2xs font-bold'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
@@ -712,12 +761,12 @@ const VersePreview = forwardRef(function VersePreview(
               : 'bg-white border border-slate-200 shadow-md shadow-slate-200/40'
           }`}
         >
-          {/* Zoom Viewport for Fit View */}
+          {/* Zoom Viewport for Fit View & Custom Zoom */}
           <div
             style={
-              !isFullscreen && effectiveZoom < 1
+              !isFullscreen && currentScale !== 1
                 ? {
-                    height: `${Math.round((cardHeight || (previewCardWidth * (16 / 9))) * effectiveZoom)}px`,
+                    height: `${Math.round((cardHeight || (previewCardWidth * (16 / 9))) * currentScale)}px`,
                     overflow: 'hidden',
                     display: 'flex',
                     justifyContent: 'center',
@@ -729,9 +778,9 @@ const VersePreview = forwardRef(function VersePreview(
           >
             <div
               style={
-                !isFullscreen && effectiveZoom < 1
+                !isFullscreen && currentScale !== 1
                   ? {
-                      transform: `scale(${effectiveZoom})`,
+                      transform: `scale(${currentScale})`,
                       transformOrigin: 'top center',
                       width: '100%',
                     }
