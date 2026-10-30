@@ -207,6 +207,13 @@ const VersePreview = forwardRef(function VersePreview(
     return Math.max(0.3, Math.min(1, Math.round(calculated * 100) / 100));
   })();
 
+  const fitHeight = Math.max(
+    360,
+    Math.round(
+      (cardHeight || (previewCardWidth > 0 ? previewCardWidth * (16 / 9) : 1100)) * fitScale
+    )
+  );
+
   const currentScale = isFullscreen
     ? 1
     : zoomPercent === null
@@ -761,28 +768,33 @@ const VersePreview = forwardRef(function VersePreview(
               : 'bg-white border border-slate-200 shadow-md shadow-slate-200/40'
           }`}
         >
-          {/* Zoom Viewport for Fit View & Custom Zoom */}
+          {/* Zoom Viewport: Keeps frame fitted to screen, while content inside zooms */}
           <div
             style={
-              !isFullscreen && currentScale !== 1
+              !isFullscreen && fitScale < 1
                 ? {
-                    height: `${Math.round((cardHeight || (previewCardWidth * (16 / 9))) * currentScale)}px`,
+                    height: `${fitHeight}px`,
                     overflow: 'hidden',
                     display: 'flex',
                     justifyContent: 'center',
-                    alignItems: 'flex-start',
+                    alignItems: 'center',
                     width: '100%',
+                    position: 'relative',
                   }
                 : { width: '100%' }
             }
           >
             <div
               style={
-                !isFullscreen && currentScale !== 1
+                !isFullscreen && fitScale < 1
                   ? {
                       transform: `scale(${currentScale})`,
-                      transformOrigin: 'top center',
+                      transformOrigin: 'center center',
                       width: '100%',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      transition: 'transform 0.15s ease-out',
                     }
                   : { width: '100%' }
               }
