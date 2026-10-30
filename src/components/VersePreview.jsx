@@ -238,6 +238,81 @@ const VersePreview = forwardRef(function VersePreview(
     setZoomPercent(prev === current ? Math.max(25, prev - 10) : prev);
   };
 
+  // Grab & Pan (Drag to Scroll) when zoomed in
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const zoomViewportRef = useRef(null);
+
+  const isZoomed = !isFullscreen && fitScale < 1 && currentScale > fitScale;
+
+  // Reset pan when switching to fit or when ratio changes
+  useEffect(() => {
+    if (zoomPercent === null) {
+      setPanOffset({ x: 0, y: 0 });
+    }
+  }, [zoomPercent, aspectRatio]);
+
+  const handleMouseDown = (e) => {
+    if (!isZoomed) return;
+    if (e.button !== 0) return; // Only left click
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      panX: panOffset.x,
+      panY: panOffset.y,
+    };
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const onWindowMove = (e) => {
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+
+      const maxPanY = Math.max(50, Math.round(((cardHeight || 1200) * currentScale - fitHeight) / 2) + 60);
+      const maxPanX = Math.max(20, Math.round((previewCardWidth * currentScale - previewCardWidth) / 2) + 40);
+
+      const newX = Math.max(-maxPanX, Math.min(maxPanX, dragStartRef.current.panX + dx));
+      const newY = Math.max(-maxPanY, Math.min(maxPanY, dragStartRef.current.panY + dy));
+
+      setPanOffset({ x: newX, y: newY });
+    };
+
+    const onWindowUp = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener('mousemove', onWindowMove);
+    window.addEventListener('mouseup', onWindowUp);
+
+    return () => {
+      window.removeEventListener('mousemove', onWindowMove);
+      window.removeEventListener('mouseup', onWindowUp);
+    };
+  }, [isDragging, currentScale, cardHeight, fitHeight, previewCardWidth]);
+
+  // Smooth wheel scrolling to pan when zoomed
+  useEffect(() => {
+    const el = zoomViewportRef.current;
+    if (!el) return;
+
+    const onNativeWheel = (e) => {
+      if (!isZoomed) return;
+      e.preventDefault();
+      const maxPanY = Math.max(50, Math.round(((cardHeight || 1200) * currentScale - fitHeight) / 2) + 60);
+      setPanOffset((prev) => ({
+        ...prev,
+        y: Math.max(-maxPanY, Math.min(maxPanY, prev.y - e.deltaY * 0.75)),
+      }));
+    };
+
+    el.addEventListener('wheel', onNativeWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onNativeWheel);
+  }, [isZoomed, currentScale, cardHeight, fitHeight]);
+
   // Exact scale multiplier based on card width (preserves 100% identical line breaks & visual percentages)
   const scaleFactor = isFullscreen && previewCardWidth > 0
     ? (typeof window !== 'undefined' ? window.innerWidth / previewCardWidth : 2.7)
@@ -768,8 +843,10 @@ const VersePreview = forwardRef(function VersePreview(
               : 'bg-white border border-slate-200 shadow-md shadow-slate-200/40'
           }`}
         >
-          {/* Zoom Viewport: Keeps frame fitted to screen, while content inside zooms */}
+          {/* Zoom Viewport: Keeps frame fitted to screen, while content inside zooms with Grab & Pan */}
           <div
+            ref={zoomViewportRef}
+            onMouseDown={handleMouseDown}
             style={
               !isFullscreen && fitScale < 1
                 ? {
@@ -780,6 +857,8 @@ const VersePreview = forwardRef(function VersePreview(
                     alignItems: 'center',
                     width: '100%',
                     position: 'relative',
+                    cursor: isDragging ? 'grabbing' : isZoomed ? 'grab' : 'default',
+                    userSelect: isDragging ? 'none' : 'auto',
                   }
                 : { width: '100%' }
             }
@@ -788,13 +867,13 @@ const VersePreview = forwardRef(function VersePreview(
               style={
                 !isFullscreen && fitScale < 1
                   ? {
-                      transform: `scale(${currentScale})`,
+                      transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${currentScale})`,
                       transformOrigin: 'center center',
                       width: '100%',
                       display: 'flex',
                       justifyContent: 'center',
                       alignItems: 'center',
-                      transition: 'transform 0.15s ease-out',
+                      transition: isDragging ? 'none' : 'transform 0.15s ease-out',
                     }
                   : { width: '100%' }
               }
