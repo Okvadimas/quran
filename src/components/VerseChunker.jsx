@@ -14,12 +14,21 @@ import {
   BookmarkCheck,
   Flag,
   FileText,
+  Sparkles,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { toPng, toJpeg } from 'html-to-image';
 import confetti from 'canvas-confetti';
 import JSZip from 'jszip';
 import AyahMarker from './AyahMarker';
 import { triggerFileDownload } from '../utils/downloadHelper';
+import {
+  splitVerseChunksWithAI,
+  translateSingleChunkWithAI,
+} from '../services/aiTranslationService';
 
 // Helper to tokenize Arabic words and handle waqaf pause marks
 export function parseArabicWords(text) {
@@ -84,6 +93,11 @@ export default function VerseChunker({
   const chunkExportRef = useRef(null);
   const [exportingChunk, setExportingChunk] = useState(null);
 
+  // AI Translation States
+  const [isAiSplitting, setIsAiSplitting] = useState(false);
+  const [singleAiLoadingId, setSingleAiLoadingId] = useState(null);
+  const [aiFeedback, setAiFeedback] = useState(null);
+
   // Target boundary to set when clicking word chips: 'start' or 'end'
   const [selectionTarget, setSelectionTarget] = useState('start');
 
@@ -114,9 +128,9 @@ export default function VerseChunker({
         };
         const chunk2 = {
           id: `chunk-${Date.now()}-2`,
-          startIndex: Math.max(0, mid - 1), // small i'adah overlap
+          startIndex: Math.min(words.length - 1, mid + 1),
           endIndex: words.length - 1,
-          arabicText: words.slice(Math.max(0, mid - 1)).map((w) => w.text).join(' '),
+          arabicText: words.slice(mid + 1).map((w) => w.text).join(' '),
           customTranslation: '',
         };
         setChunks([chunk1, chunk2]);
@@ -168,22 +182,6 @@ export default function VerseChunker({
     );
   };
 
-  // Change Start Word via Dropdown or Stepper
-  const handleStartWordChange = (newStart) => {
-    if (!currentTargetChunk) return;
-    const clampedStart = Math.max(0, Math.min(newStart, words.length - 1));
-    const clampedEnd = Math.max(clampedStart, rangeSelection.end);
-    updateChunkRange(currentTargetChunk.id, clampedStart, clampedEnd);
-  };
-
-  // Change End Word via Dropdown or Stepper
-  const handleEndWordChange = (newEnd) => {
-    if (!currentTargetChunk) return;
-    const clampedEnd = Math.max(0, Math.min(newEnd, words.length - 1));
-    const clampedStart = Math.min(rangeSelection.start, clampedEnd);
-    updateChunkRange(currentTargetChunk.id, clampedStart, clampedEnd);
-  };
-
   // Handle clicking a word chip in the word cloud
   const handleWordChipClick = (clickedIdx) => {
     if (!currentTargetChunk) return;
@@ -204,20 +202,6 @@ export default function VerseChunker({
       setSelectionTarget('start');
     }
   };
-
-  const midPoint = Math.floor(words.length / 2);
-  const isMiddleToEndActive =
-    words.length > 0 &&
-    rangeSelection.start === midPoint &&
-    rangeSelection.end === words.length - 1;
-  const isStartToMiddleActive =
-    words.length > 0 &&
-    rangeSelection.start === 0 &&
-    rangeSelection.end === midPoint;
-  const isAllWordsActive =
-    words.length > 0 &&
-    rangeSelection.start === 0 &&
-    rangeSelection.end === words.length - 1;
 
   // Helper for export styles
   const getAspectRatioStyle = (ratio) => {
@@ -262,32 +246,6 @@ export default function VerseChunker({
     }
   };
 
-  // Quick preset shortcuts
-  const handleQuickPreset = (type) => {
-    if (!currentTargetChunk || words.length === 0) return;
-    const mid = Math.floor(words.length / 2);
-
-    if (type === 'middleToEnd') {
-      updateChunkRange(currentTargetChunk.id, mid, words.length - 1);
-    } else if (type === 'startToMiddle') {
-      updateChunkRange(currentTargetChunk.id, 0, mid);
-    } else if (type === 'allWords') {
-      updateChunkRange(currentTargetChunk.id, 0, words.length - 1);
-    }
-  };
-
-  // Fine-tuning step (-1 / +1)
-  const handleStepRange = (targetBound, delta) => {
-    if (!currentTargetChunk) return;
-    if (targetBound === 'start') {
-      const nextStart = Math.max(0, Math.min(rangeSelection.start + delta, rangeSelection.end));
-      updateChunkRange(currentTargetChunk.id, nextStart, rangeSelection.end);
-    } else {
-      const nextEnd = Math.max(rangeSelection.start, Math.min(rangeSelection.end + delta, words.length - 1));
-      updateChunkRange(currentTargetChunk.id, rangeSelection.start, nextEnd);
-    }
-  };
-
   // Add a new breath chunk
   const handleAddChunk = () => {
     if (words.length === 0) return;
@@ -297,11 +255,9 @@ export default function VerseChunker({
 
     if (lastChunk) {
       if (lastChunk.endIndex < words.length - 1) {
-        // Intelligently start from end of last chunk (with 1 word overlap if applicable)
-        nextStart = Math.max(0, lastChunk.endIndex > 0 ? lastChunk.endIndex : lastChunk.endIndex + 1);
+        nextStart = lastChunk.endIndex + 1;
         nextEnd = words.length - 1;
       } else {
-        // If last chunk already reached the end, suggest second half
         nextStart = Math.floor(words.length / 2);
         nextEnd = words.length - 1;
       }
@@ -320,7 +276,7 @@ export default function VerseChunker({
     setActiveChunkIndex(newChunks.length - 1);
   };
 
-  // Duplicate chunk (useful for i'adah repetition)
+  // Duplicate chunk
   const handleDuplicateChunk = (chunk, index) => {
     const duplicated = {
       ...chunk,
@@ -358,12 +314,88 @@ export default function VerseChunker({
     );
   };
 
-  // Check if a chunk is an i'adah (repetition of words from preceding chunk)
-  const isChunkIadah = (chunkIndex) => {
-    if (chunkIndex <= 0) return false;
-    const prevChunk = chunks[chunkIndex - 1];
-    const currChunk = chunks[chunkIndex];
-    return currChunk && prevChunk && currChunk.startIndex <= prevChunk.endIndex;
+  // Auto-split all chunk translations using AI (Gemini)
+  const handleAiSplitAll = async () => {
+    if (!currentVerseData?.indonesianText) {
+      setAiFeedback({
+        type: 'error',
+        message: 'Teks terjemahan Indonesia untuk ayat ini tidak ditemukan.',
+      });
+      return;
+    }
+
+    if (chunks.length === 0) return;
+
+    setIsAiSplitting(true);
+    setAiFeedback(null);
+
+    try {
+      const results = await splitVerseChunksWithAI({
+        fullArabic: currentVerseData.arabicText,
+        fullIndonesian: currentVerseData.indonesianText,
+        chunks,
+      });
+
+      if (Array.isArray(results) && results.length > 0) {
+        setChunks((prev) =>
+          prev.map((c, i) => {
+            const aiTranslation = results[i];
+            return aiTranslation ? { ...c, customTranslation: aiTranslation.trim() } : c;
+          })
+        );
+
+        setAiFeedback({
+          type: 'success',
+          message: `Berhasil memisahkan terjemahan untuk ${results.length} potongan ayat!`,
+        });
+
+        confetti({
+          particleCount: 25,
+          spread: 45,
+          origin: { y: 0.6 },
+        });
+      } else {
+        throw new Error('Hasil terjemahan kosong dari model AI.');
+      }
+    } catch (err) {
+      console.error('AI Split Error:', err);
+      setAiFeedback({
+        type: 'error',
+        message: err.message || 'Gagal memproses terjemahan AI.',
+      });
+    } finally {
+      setIsAiSplitting(false);
+    }
+  };
+
+  // Translate a single chunk using AI
+  const handleAiTranslateSingle = async (chunk, idx) => {
+    if (!currentVerseData?.indonesianText || !chunk) return;
+
+    setSingleAiLoadingId(chunk.id);
+    setAiFeedback(null);
+
+    try {
+      const translated = await translateSingleChunkWithAI({
+        fullArabic: currentVerseData.arabicText,
+        fullIndonesian: currentVerseData.indonesianText,
+        chunkArabic: chunk.arabicText,
+        chunkIndex: idx,
+        totalChunks: chunks.length,
+      });
+
+      if (translated) {
+        handleUpdateTranslation(chunk.id, translated);
+      }
+    } catch (err) {
+      console.error('Single AI Translate Error:', err);
+      setAiFeedback({
+        type: 'error',
+        message: `Gagal menerjemahkan potongan #${idx + 1}: ${err.message}`,
+      });
+    } finally {
+      setSingleAiLoadingId(null);
+    }
   };
 
   // Download single chunk with dedicated offscreen renderer
@@ -566,12 +598,12 @@ export default function VerseChunker({
         <div className="space-y-5">
           {/* 1. Interactive Word Selector Section */}
           <div className="bg-slate-50/90 border border-slate-200/90 rounded-xl p-3.5 sm:p-4 space-y-3.5">
-            {/* Header: which chunk is being edited */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200/80">
+            {/* Header: which chunk is being edited + Word Pick Target Buttons */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="w-4 h-4 text-emerald-700" />
                 <span className="text-xs font-bold text-slate-800">
-                  Pengaturan Rentang Kata:{' '}
+                  Pilih Kata untuk{' '}
                   <span className="text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                     Nafas #{activeChunkIndex + 1}
                   </span>
@@ -581,147 +613,8 @@ export default function VerseChunker({
                 </span>
               </div>
 
-              <span className="text-[11px] text-slate-500">
-                Pilih potongan di bawah untuk mengaktifkan preview dan mengatur ulang katanya
-              </span>
-            </div>
-
-            {/* Direct Start & End Word Dropdowns (Full Custom Choice) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-              {/* Mulai dari Kata */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                    <BookmarkCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Mulai dari Kata (Awal):</span>
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleStepRange('start', -1)}
-                      disabled={rangeSelection.start <= 0}
-                      title="Mundurkan 1 kata"
-                      className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-30 cursor-pointer"
-                    >
-                      -1
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleStepRange('start', 1)}
-                      disabled={rangeSelection.start >= rangeSelection.end}
-                      title="Majukan 1 kata"
-                      className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-30 cursor-pointer"
-                    >
-                      +1
-                    </button>
-                  </div>
-                </div>
-
-                <select
-                  value={rangeSelection.start}
-                  onChange={(e) => handleStartWordChange(Number(e.target.value))}
-                  className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 cursor-pointer"
-                >
-                  {words.map((w) => (
-                    <option key={`start-opt-${w.index}`} value={w.index}>
-                      Kata #{w.index + 1} — {w.text}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Sampai Kata */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                    <Flag className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Sampai Kata (Akhir):</span>
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleStepRange('end', -1)}
-                      disabled={rangeSelection.end <= rangeSelection.start}
-                      title="Mundurkan 1 kata"
-                      className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-30 cursor-pointer"
-                    >
-                      -1
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleStepRange('end', 1)}
-                      disabled={rangeSelection.end >= words.length - 1}
-                      title="Majukan 1 kata"
-                      className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-30 cursor-pointer"
-                    >
-                      +1
-                    </button>
-                  </div>
-                </div>
-
-                <select
-                  value={rangeSelection.end}
-                  onChange={(e) => handleEndWordChange(Number(e.target.value))}
-                  className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 cursor-pointer"
-                >
-                  {words.map((w) => (
-                    <option key={`end-opt-${w.index}`} value={w.index}>
-                      Kata #{w.index + 1} — {w.text}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Quick Presets Buttons with Dynamic Active State */}
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
-              <span className="text-[11px] font-semibold text-slate-500">Pilihan Cepat:</span>
-
-              <button
-                type="button"
-                onClick={() => handleQuickPreset('middleToEnd')}
-                className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all cursor-pointer ${
-                  isMiddleToEndActive
-                    ? 'bg-emerald-100 text-emerald-800 border-2 border-emerald-500 shadow-xs ring-1 ring-emerald-400 font-bold'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-                }`}
-              >
-                ⚡ Tengah s/d Akhir
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickPreset('startToMiddle')}
-                className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all cursor-pointer ${
-                  isStartToMiddleActive
-                    ? 'bg-emerald-100 text-emerald-800 border-2 border-emerald-500 shadow-xs ring-1 ring-emerald-400 font-bold'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-                }`}
-              >
-                Awal s/d Tengah
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickPreset('allWords')}
-                className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all cursor-pointer ${
-                  isAllWordsActive
-                    ? 'bg-emerald-100 text-emerald-800 border-2 border-emerald-500 shadow-xs ring-1 ring-emerald-400 font-bold'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-                }`}
-              >
-                Semua Kata (1 s/d {words.length})
-              </button>
-            </div>
-
-            {/* Word Cloud Mode Indicator & Instructions */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-200/80">
-              <span className="text-[11px] text-slate-600">
-                Atau klik langsung pada kata di bawah:
-              </span>
-
               {/* Mode Tabs for Clicking: Start vs End Word */}
-              <div className="flex items-center gap-1.5 self-start sm:self-auto bg-white p-1 rounded-lg border border-slate-200 text-xs">
+              <div className="flex items-center gap-1.5 self-start sm:self-auto bg-white p-1 rounded-lg border border-slate-200 text-xs shadow-2xs">
                 <button
                   type="button"
                   onClick={() => setSelectionTarget('start')}
@@ -838,7 +731,7 @@ export default function VerseChunker({
 
           {/* 2. Daftar Potongan Nafas (Chunk Cards List) */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-700" />
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
@@ -846,22 +739,72 @@ export default function VerseChunker({
                 </h4>
               </div>
 
-              <button
-                type="button"
-                onClick={handleAddChunk}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 transition-all cursor-pointer shadow-2xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Tambah Potongan Nafas</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {/* AI Split All Button */}
+                <button
+                  type="button"
+                  onClick={handleAiSplitAll}
+                  disabled={isAiSplitting || chunks.length === 0}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                  title="Pecah otomatis terjemahan resmi Kemenag menggunakan AI sesuai potongan ayat"
+                >
+                  {isAiSplitting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Memproses AI...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Pisahkan Terjemahan (AI)</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Add Chunk */}
+                <button
+                  type="button"
+                  onClick={handleAddChunk}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 transition-all cursor-pointer shadow-2xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Tambah Potongan</span>
+                </button>
+              </div>
             </div>
+
+            {/* AI Feedback message */}
+            {aiFeedback && (
+              <div
+                className={`p-2.5 rounded-lg text-xs flex items-center justify-between gap-2 border ${
+                  aiFeedback.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {aiFeedback.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{aiFeedback.message}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAiFeedback(null)}
+                  className="text-slate-400 hover:text-slate-600 font-bold ml-2 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* List of Chunks */}
             <div className="space-y-2.5">
               {chunks.map((chunk, idx) => {
                 const isActive = idx === activeChunkIndex;
                 const isCurrentPreview = isActive && previewTarget === 'chunk';
-                const isIadah = isChunkIadah(idx);
 
                 return (
                   <div
@@ -893,17 +836,6 @@ export default function VerseChunker({
                           Kata {chunk.startIndex + 1} – {chunk.endIndex + 1} (
                           {chunk.endIndex - chunk.startIndex + 1} kata)
                         </span>
-
-                        {/* I'adah badge if this breath repeats previous words */}
-                        {isIadah && (
-                          <span
-                            title="Tarikan nafas ini mengulang kata dari potongan sebelumnya"
-                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60"
-                          >
-                            <Repeat className="w-3 h-3" />
-                            I'adah (Ulang)
-                          </span>
-                        )}
                       </div>
 
                       {/* Action buttons */}
@@ -944,7 +876,7 @@ export default function VerseChunker({
                             e.stopPropagation();
                             handleDuplicateChunk(chunk, idx);
                           }}
-                          title="Duplikat potongan untuk mengulang (i'adah)"
+                          title="Duplikat potongan"
                           className="p-1.5 rounded-md text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
                         >
                           <Copy className="w-3.5 h-3.5" />
@@ -981,127 +913,101 @@ export default function VerseChunker({
                       )}
                     </div>
 
-                    {/* Latin Transliteration Preview in Chunk Card if Transliteration is ON */}
-                    {showTransliteration && (
-                      <div className="mt-2.5 px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 text-xs">
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-                          Teks Latin (Transliterasi) Potongan:
-                        </span>
-                        {chunk.customLatin && chunk.customLatin.trim() !== '' ? (
-                          <p
-                            style={{ fontFamily: "'Outfit', sans-serif" }}
-                            className="text-amber-800/90 italic leading-relaxed font-normal text-[11px]"
-                          >
-                            {chunk.customLatin}
-                          </p>
-                        ) : (
-                          <p className="text-slate-400 italic text-[11px]">
-                            (Belum ada teks latin potongan — isi pada kolom di bawah)
-                          </p>
-                        )}
-                      </div>
-                    )}
-
                     {/* Latin Input per chunk */}
-                    <div className="mt-2 pt-2 border-t border-slate-100">
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-                        <label className="font-medium flex items-center gap-1">
-                          <FileText className="w-3 h-3 text-slate-400" />
-                          Kustom Teks Latin Potongan (Opsional)
-                        </label>
-                        {chunk.customLatin && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUpdateLatin(chunk.id, '');
-                            }}
-                            className="text-rose-600 hover:underline cursor-pointer"
-                          >
-                            Kosongkan
-                          </button>
-                        )}
-                      </div>
-                      <input
-                        type="text"
-                        value={chunk.customLatin || ''}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveChunkIndex(idx);
-                          if (setPreviewTarget) setPreviewTarget('chunk');
-                        }}
-                        onChange={(e) => handleUpdateLatin(chunk.id, e.target.value)}
-                        placeholder="Ketik teks latin khusus untuk potongan ini..."
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all font-inter cursor-text"
-                      />
-                    </div>
-
-                    {/* Translation Preview in Chunk Card if Translation is ON */}
-                    {showTranslation && (
-                      <div className="mt-2.5 px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 text-xs">
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-                          Terjemahan Potongan:
-                        </span>
-                        {chunk.customTranslation && chunk.customTranslation.trim() !== '' ? (
-                          <p
-                            style={{
-                              fontFamily: getTranslationFontName(),
-                              textTransform: translationAllCaps ? 'uppercase' : 'none',
-                              letterSpacing: translationAllCaps ? '0.04em' : 'normal',
-                            }}
-                            className="text-slate-700 leading-relaxed font-normal"
-                          >
-                            {showTranslationAyahNumber && selectedAyah && idx === 0 && !/^\s*[\(\[]\s*\d+\s*[\)\]]/.test(chunk.customTranslation) && (
-                              <span className="font-semibold mr-1.5 opacity-90">
-                                ( {selectedAyah} )
-                              </span>
-                            )}
-                            {chunk.customTranslation}
-                          </p>
-                        ) : (
-                          <p
-                            style={{ fontFamily: getTranslationFontName() }}
-                            className="text-slate-400 italic text-[11px]"
-                          >
-                            (Belum ada terjemahan khusus potongan — isi pada kolom di bawah)
-                          </p>
-                        )}
+                    {showTransliteration && (
+                      <div className="mt-2.5 pt-2 border-t border-slate-100">
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                          <label className="font-medium flex items-center gap-1">
+                            <FileText className="w-3 h-3 text-slate-400" />
+                            Teks Latin Potongan
+                          </label>
+                          {chunk.customLatin && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateLatin(chunk.id, '');
+                              }}
+                              className="text-rose-600 hover:underline cursor-pointer"
+                            >
+                              Kosongkan
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          value={chunk.customLatin || ''}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveChunkIndex(idx);
+                            if (setPreviewTarget) setPreviewTarget('chunk');
+                          }}
+                          onChange={(e) => handleUpdateLatin(chunk.id, e.target.value)}
+                          placeholder="Ketik teks latin untuk potongan ini..."
+                          className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all font-inter cursor-text"
+                        />
                       </div>
                     )}
 
                     {/* Translation Input per chunk */}
-                    <div className="mt-2.5 pt-2 border-t border-slate-100">
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-                        <label className="font-medium flex items-center gap-1">
-                          <FileText className="w-3 h-3 text-slate-400" />
-                          Kustom Terjemahan Potongan (Opsional)
-                        </label>
-                        {chunk.customTranslation && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUpdateTranslation(chunk.id, '');
-                            }}
-                            className="text-rose-600 hover:underline cursor-pointer"
-                          >
-                            Kosongkan
-                          </button>
-                        )}
+                    {showTranslation && (
+                      <div className="mt-2.5 pt-2 border-t border-slate-100">
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                          <label className="font-medium flex items-center gap-1">
+                            <FileText className="w-3 h-3 text-slate-400" />
+                            Terjemahan Potongan
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAiTranslateSingle(chunk, idx);
+                              }}
+                              disabled={singleAiLoadingId === chunk.id || isAiSplitting}
+                              title="Terjemahkan potongan ini menggunakan AI Gemini"
+                              className="inline-flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold hover:underline cursor-pointer disabled:opacity-50"
+                            >
+                              {singleAiLoadingId === chunk.id ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  <span>Menerjemahkan...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="w-3 h-3 text-amber-500" />
+                                  <span>AI Terjemahkan</span>
+                                </>
+                              )}
+                            </button>
+                            {chunk.customTranslation && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUpdateTranslation(chunk.id, '');
+                                }}
+                                className="text-rose-600 hover:underline cursor-pointer"
+                              >
+                                Kosongkan
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <input
+                          type="text"
+                          value={chunk.customTranslation || ''}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveChunkIndex(idx);
+                            if (setPreviewTarget) setPreviewTarget('chunk');
+                          }}
+                          onChange={(e) => handleUpdateTranslation(chunk.id, e.target.value)}
+                          placeholder="Ketik terjemahan untuk potongan ini..."
+                          className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-inter cursor-text"
+                        />
                       </div>
-                      <input
-                        type="text"
-                        value={chunk.customTranslation || ''}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveChunkIndex(idx);
-                          if (setPreviewTarget) setPreviewTarget('chunk');
-                        }}
-                        onChange={(e) => handleUpdateTranslation(chunk.id, e.target.value)}
-                        placeholder="Ketik terjemahan khusus untuk potongan nafas ini..."
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-inter cursor-text"
-                      />
-                    </div>
+                    )}
                   </div>
                 );
               })}
@@ -1364,6 +1270,7 @@ export default function VerseChunker({
             )}
           </div>
         )}
+
       </div>
     </div>
   );
