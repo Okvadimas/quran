@@ -7,8 +7,12 @@ export default function Navbar({ dataSource = 'kemenag' }) {
     <header className="border-b border-slate-200/80 bg-white/80 backdrop-blur-md sticky top-0 z-40 transition-colors">
       <div className="w-full px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center shadow-sm text-white font-bold text-lg">
-            <span>📖</span>
+          <div className="w-10 h-10 flex items-center justify-center shrink-0">
+            <img
+              src="/logo.png"
+              alt="Soul of Quran"
+              className="w-full h-full object-contain"
+            />
           </div>
           <div>
             <div className="flex items-center gap-2">
