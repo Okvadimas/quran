@@ -6,6 +6,7 @@ import VersePreview from './components/VersePreview';
 import ExportToolbar from './components/ExportToolbar';
 import VerseChunker from './components/VerseChunker';
 import { SURAHS } from './data/surahs';
+import { sanitizeKemenagText } from './utils/textHelper';
 
 export default function App() {
   // Surah & Verse state (Defaults to Surah 23: Al-Mu'minun, Verse 1)
@@ -56,6 +57,7 @@ export default function App() {
 
   // Surah data & verses
   const [surahVerses, setSurahVerses] = useState([]);
+  const [activeDataSource, setActiveDataSource] = useState('kemenag'); // 'kemenag' | 'fallback'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -70,7 +72,14 @@ export default function App() {
     let isMounted = true;
 
     if (cacheRef.current[selectedSurah]) {
-      setSurahVerses(cacheRef.current[selectedSurah]);
+      const cached = cacheRef.current[selectedSurah];
+      if (Array.isArray(cached)) {
+        setSurahVerses(cached);
+        setActiveDataSource('kemenag');
+      } else {
+        setSurahVerses(cached.verses || []);
+        setActiveDataSource(cached.source || 'kemenag');
+      }
       return;
     }
 
@@ -79,40 +88,111 @@ export default function App() {
 
     const fetchSurah = async () => {
       try {
-        const res = await fetch(
-          `https://api.alquran.cloud/v1/surah/${selectedSurah}/editions/quran-simple,id.indonesian,en.asad,en.transliteration`
-        );
+        // Prioritas Opsi 1: EQuran.id API (Standar Kemenag RI untuk Mushaf, Terjemahan, & Transliterasi Latin)
+        // Disertai terjemahan bahasa Inggris Saheeh International edisi revisi langsung dari API Quran.com (Resource ID 20)
+        const [equranRes, enRes] = await Promise.allSettled([
+          fetch(`https://equran.id/api/v2/surat/${selectedSurah}`),
+          fetch(`https://api.quran.com/api/v4/verses/by_chapter/${selectedSurah}?translations=20&per_page=300`),
+        ]);
 
-        if (!res.ok) {
-          throw new Error(`HTTP error ${res.status}`);
+        let combined = [];
+        let sourceUsed = 'kemenag';
+
+        if (equranRes.status === 'fulfilled' && equranRes.value.ok) {
+          const json = await equranRes.value.json();
+          if (json.code === 200 && Array.isArray(json.data?.ayat)) {
+            let englishAyahs = [];
+            if (enRes.status === 'fulfilled' && enRes.value.ok) {
+              try {
+                const enJson = await enRes.value.json();
+                if (Array.isArray(enJson.verses)) {
+                  englishAyahs = enJson.verses.map((v) => {
+                    const raw = v.translations?.[0]?.text || '';
+                    return {
+                      text: raw
+                        .replace(/<sup[^>]*>.*?<\/sup>/gi, '')
+                        .replace(/<[^>]+>/g, '')
+                        .replace(/\s+/g, ' ')
+                        .trim(),
+                    };
+                  });
+                }
+              } catch (e) {
+                console.warn('Quran.com English translation parse warning:', e);
+              }
+            }
+
+            // Fallback terjemahan Inggris ke AlQuran.cloud jika Quran.com API tidak merespons
+            if (!englishAyahs.length) {
+              try {
+                const fallbackEn = await fetch(`https://api.alquran.cloud/v1/surah/${selectedSurah}/en.sahih`);
+                if (fallbackEn.ok) {
+                  const fallbackEnJson = await fallbackEn.json();
+                  if (fallbackEnJson.code === 200 && Array.isArray(fallbackEnJson.data?.ayahs)) {
+                    englishAyahs = fallbackEnJson.data.ayahs;
+                  }
+                }
+              } catch (e) {
+                console.warn('Fallback English translation failed:', e);
+              }
+            }
+
+            combined = json.data.ayat.map((item, idx) => ({
+              numberInSurah: item.nomorAyat,
+              arabicText: item.teksArab,
+              indonesianText: sanitizeKemenagText(item.teksIndonesia),
+              englishText: englishAyahs[idx]?.text || '',
+              latinText: sanitizeKemenagText(item.teksLatin),
+              audio: item.audio || {},
+            }));
+
+            console.log(`[Quran API] ✅ Sumber aktif: EQuran.id (Kemenag RI) untuk surat #${selectedSurah}`);
+          }
         }
 
-        const json = await res.json();
-        if (json.code === 200 && Array.isArray(json.data) && json.data.length >= 3) {
-          const arabicAyahs = json.data[0].ayahs || [];
-          const indoAyahs = json.data[1].ayahs || [];
-          const englishAyahs = json.data[2].ayahs || [];
-          const latinAyahs = json.data[3]?.ayahs || [];
+        // Fallback otomatis ke AlQuran.cloud jika EQuran.id mengalami kendala jaringan
+        if (!combined.length) {
+          sourceUsed = 'fallback';
+          console.warn(`[Quran API] ⚠️ EQuran.id tidak dapat dijangkau, fallback ke AlQuran.cloud untuk surat #${selectedSurah}`);
 
-          const combined = arabicAyahs.map((item, idx) => ({
-            numberInSurah: item.numberInSurah,
-            arabicText: item.text,
-            indonesianText: indoAyahs[idx]?.text || '',
-            englishText: englishAyahs[idx]?.text || '',
-            latinText: latinAyahs[idx]?.text || '',
-          }));
+          const fallbackRes = await fetch(
+            `https://api.alquran.cloud/v1/surah/${selectedSurah}/editions/quran-simple,id.indonesian,en.sahih,en.transliteration`
+          );
 
+          if (!fallbackRes.ok) {
+            throw new Error(`HTTP error ${fallbackRes.status}`);
+          }
+
+          const fallbackJson = await fallbackRes.json();
+          if (fallbackJson.code === 200 && Array.isArray(fallbackJson.data) && fallbackJson.data.length >= 3) {
+            const arabicAyahs = fallbackJson.data[0].ayahs || [];
+            const indoAyahs = fallbackJson.data[1].ayahs || [];
+            const englishAyahs = fallbackJson.data[2].ayahs || [];
+            const latinAyahs = fallbackJson.data[3]?.ayahs || [];
+
+            combined = arabicAyahs.map((item, idx) => ({
+              numberInSurah: item.numberInSurah,
+              arabicText: item.text,
+              indonesianText: indoAyahs[idx]?.text || '',
+              englishText: englishAyahs[idx]?.text || '',
+              latinText: latinAyahs[idx]?.text || '',
+            }));
+          }
+        }
+
+        if (combined.length > 0) {
           if (isMounted) {
-            cacheRef.current[selectedSurah] = combined;
+            cacheRef.current[selectedSurah] = { verses: combined, source: sourceUsed };
             setSurahVerses(combined);
+            setActiveDataSource(sourceUsed);
           }
         } else {
-          throw new Error('Invalid Quran data format.');
+          throw new Error('Format data Al-Qur\'an tidak sesuai.');
         }
       } catch (err) {
         console.error('Fetch surah error:', err);
         if (isMounted) {
-          setError('Failed to fetch verse data. Please check your internet connection.');
+          setError('Gagal memuat data ayat. Silakan periksa koneksi internet Anda.');
         }
       } finally {
         if (isMounted) {
@@ -166,10 +246,10 @@ export default function App() {
     if (mode === 'single') {
       baseData =
         surahVerses.find((v) => v.numberInSurah === selectedAyah) || {
-          arabicText: 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
-          indonesianText: 'Dengan nama Allah Yang Maha Pengasih, Maha Penyayang.',
-          englishText: 'In the name of God, the Most Gracious, the Most Merciful.',
-          latinText: "Bismillaahir-rohmaanir-rohiim",
+          arabicText: 'بِسْمِ اللّٰهِ الرَّحْمٰنِ الرَّحِيْمِ',
+          indonesianText: 'Dengan nama Allah Yang Maha Pengasih lagi Maha Penyayang.',
+          englishText: 'In the name of Allah, the Entirely Merciful, the Especially Merciful.',
+          latinText: "Bismillāhir-raḥmānir-raḥīm(i).",
           numberInSurah: selectedAyah,
         };
     } else {
@@ -243,7 +323,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col selection:bg-emerald-500/20 selection:text-emerald-900">
-      <Navbar />
+      <Navbar dataSource={activeDataSource} />
 
       {/* Full width container without max-w-7xl constraint */}
       <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">
@@ -443,7 +523,16 @@ export default function App() {
         <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-3">
           <p>© {new Date().getFullYear()} Soul of Quran — Minimal Light Edition</p>
           <p className="text-slate-500">
-            Source Data: <span className="text-emerald-700 font-semibold">AlQuran.cloud (quran-simple)</span>
+            Source Data:{' '}
+            <span
+              className={`font-semibold ${
+                activeDataSource === 'kemenag' ? 'text-emerald-700' : 'text-amber-700'
+              }`}
+            >
+              {activeDataSource === 'kemenag'
+                ? 'Kemenag RI (EQuran.id)'
+                : 'AlQuran.cloud (Mode Fallback)'}
+            </span>
           </p>
         </div>
       </footer>

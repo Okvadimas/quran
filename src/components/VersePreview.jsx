@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, forwardRef } from 'react';
 import { Loader2, ChevronLeft, ChevronRight, Maximize2, Minimize2, FileText, Copy, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import AyahMarker from './AyahMarker';
+import { sanitizeKemenagText } from '../utils/textHelper';
 
 const VersePreview = forwardRef(function VersePreview(
   {
@@ -360,7 +361,7 @@ const VersePreview = forwardRef(function VersePreview(
       ? verseData.customLatin
       : (customVerseLatin || '');
 
-  const displayedLatinText = (() => {
+  const displayedLatinText = sanitizeKemenagText((() => {
     if (isChunkActive && currentChunk) {
       if (currentChunk.customLatin && currentChunk.customLatin.trim() !== '') {
         return currentChunk.customLatin;
@@ -371,7 +372,7 @@ const VersePreview = forwardRef(function VersePreview(
       return activeCustomVerseLatin;
     }
     return verseData?.latinText || '';
-  })();
+  })());
 
   const shouldRenderAyahMarker = showAyahNumber && selectedAyah && (!isChunkActive || isLastChunk);
   const shouldRenderTranslationAyahNumber = showTranslationAyahNumber && (!isChunkActive || isFirstChunk);

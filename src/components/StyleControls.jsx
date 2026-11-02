@@ -422,7 +422,7 @@ export default function StyleControls({
                       <span>
                         {customVerseLatin && customVerseLatin.trim() !== ''
                           ? 'Menggunakan ejaan latin kustom'
-                          : 'Menggunakan ejaan bawaan (AlQuran.cloud)'}
+                          : 'Menggunakan ejaan bawaan (Kemenag RI)'}
                       </span>
                       {customVerseLatin && customVerseLatin.trim() !== '' && (
                         <span>{customVerseLatin.trim().length} karakter</span>
@@ -467,13 +467,14 @@ export default function StyleControls({
                       <button
                         type="button"
                         onClick={() => setTranslationLang('en')}
+                        title="Saheeh International (Standar Quran.com)"
                         className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
                           translationLang === 'en'
                             ? 'bg-emerald-50 border-emerald-600 text-emerald-900 font-bold'
                             : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                         }`}
                       >
-                        English
+                        English (Saheeh)
                       </button>
                     </div>
                   </div>
